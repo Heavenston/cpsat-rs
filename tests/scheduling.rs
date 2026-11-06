@@ -13,11 +13,11 @@ fn two_tasks_one_machine() {
     let e1 = model.new_int_var(0..=100, "e1");
     let iv1 = model.new_interval_var(s1, d1, e1, "task1");
 
-    model.add_no_overlap(&[iv0, iv1]);
+    model.add_no_overlap([iv0, iv1]);
 
     let makespan = model.new_int_var(0..=100, "makespan");
     model.add(LinearExpr::from(e0).le(100)); // dummy to use e0 bound
-    model.add_max_equality(makespan, &[e0, e1]);
+    model.add_max_equality(makespan, [e0, e1]);
     model.minimize(makespan);
 
     let response = CpSolver::solve(&model).unwrap();

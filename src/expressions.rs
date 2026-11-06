@@ -1,6 +1,7 @@
 //! Linear expressions and bounded linear expressions for constraints.
 
 use crate::vars::{BoolVar, IntVar};
+use std::borrow::Borrow;
 use std::ops::{Add, Mul, Neg, Sub};
 
 /// A linear expression: sum(coeff_i * var_i) + constant.
@@ -20,12 +21,12 @@ impl LinearExpr {
         }
     }
 
-    /// Create a sum of variables with equal coefficients of 1.
-    pub fn sum(vars: &[IntVar]) -> Self {
-        Self {
-            terms: vars.iter().map(|&v| (v, 1)).collect(),
-            constant: 0,
-        }
+    /// Create the sum of the given expressions (variables, literals,
+    /// constants or other expressions).
+    pub fn sum<E: Into<LinearExpr>>(exprs: impl IntoIterator<Item = E>) -> Self {
+        exprs
+            .into_iter()
+            .fold(Self::default(), |acc, e| acc + e.into())
     }
 
     /// Create a weighted sum of variables.
@@ -33,7 +34,12 @@ impl LinearExpr {
     /// # Panics
     ///
     /// Panics if `vars` and `coeffs` have different lengths.
-    pub fn weighted_sum(vars: &[IntVar], coeffs: &[i64]) -> Self {
+    pub fn weighted_sum<V: Borrow<IntVar>, C: Borrow<i64>>(
+        vars: impl IntoIterator<Item = V>,
+        coeffs: impl IntoIterator<Item = C>,
+    ) -> Self {
+        let vars: Vec<IntVar> = vars.into_iter().map(|v| *v.borrow()).collect();
+        let coeffs: Vec<i64> = coeffs.into_iter().map(|c| *c.borrow()).collect();
         assert_eq!(
             vars.len(),
             coeffs.len(),
@@ -42,11 +48,7 @@ impl LinearExpr {
             coeffs.len()
         );
         Self {
-            terms: vars
-                .iter()
-                .zip(coeffs.iter())
-                .map(|(&v, &c)| (v, c))
-                .collect(),
+            terms: vars.into_iter().zip(coeffs).collect(),
             constant: 0,
         }
     }
@@ -117,6 +119,24 @@ impl From<IntVar> for LinearExpr {
 impl From<BoolVar> for LinearExpr {
     fn from(b: BoolVar) -> Self {
         Self::from(b.as_int_var())
+    }
+}
+
+impl From<&IntVar> for LinearExpr {
+    fn from(v: &IntVar) -> Self {
+        Self::from(*v)
+    }
+}
+
+impl From<&BoolVar> for LinearExpr {
+    fn from(b: &BoolVar) -> Self {
+        Self::from(*b)
+    }
+}
+
+impl From<&LinearExpr> for LinearExpr {
+    fn from(e: &LinearExpr) -> Self {
+        e.clone()
     }
 }
 
