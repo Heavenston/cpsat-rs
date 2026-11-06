@@ -74,7 +74,7 @@ fn eval_expression_against_solution() {
     model.add(LinearExpr::from(b).eq(1));
 
     let response = CpSolver::solve(&model).unwrap();
-    let expr = 2 * x - y * 3 + LinearExpr::from(b) + 5;
+    let expr = 2 * x - y * 3 + b + 5;
     assert_eq!(response.eval(&expr), 6 - 21 + 1 + 5);
     assert_eq!(response.eval(expr), -9);
     assert_eq!(response.eval(x), 3);
@@ -91,4 +91,13 @@ fn eval_panics_on_infeasible() {
     model.add(LinearExpr::from(x).eq(5));
     let response = CpSolver::solve(&model).unwrap();
     let _ = response.eval(x + 1);
+}
+
+#[test]
+#[should_panic(expected = "Cannot convert negated BoolVar")]
+fn add_negated_bool_var_panics() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=1, "x");
+    let b = model.new_bool_var("b");
+    let _ = LinearExpr::from(x) + !b;
 }

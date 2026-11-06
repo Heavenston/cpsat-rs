@@ -189,6 +189,14 @@ impl Add<IntVar> for LinearExpr {
     }
 }
 
+impl Add<BoolVar> for LinearExpr {
+    type Output = LinearExpr;
+    fn add(mut self, rhs: BoolVar) -> LinearExpr {
+        self.terms.push((rhs.as_int_var(), 1));
+        self
+    }
+}
+
 impl Add<i64> for LinearExpr {
     type Output = LinearExpr;
     fn add(mut self, rhs: i64) -> LinearExpr {
