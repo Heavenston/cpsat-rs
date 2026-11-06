@@ -207,3 +207,26 @@ fn mul_assign_overflow_panics() {
     let mut expr = x * i64::MAX;
     expr *= 2;
 }
+
+#[test]
+fn negate_vars() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let a = model.new_bool_var("a");
+    model.add(LinearExpr::from(x).eq(4));
+    model.add(LinearExpr::from(a).eq(1));
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert_eq!(response.eval(-x), -4);
+    assert_eq!(response.eval(-a), -1);
+    assert_eq!(response.eval(-x + 10), 6);
+    assert_eq!(response.eval(-a - x), -5);
+}
+
+#[test]
+#[should_panic(expected = "Cannot convert negated BoolVar")]
+fn negate_negated_bool_var_panics() {
+    let mut model = CpModel::new();
+    let a = model.new_bool_var("a");
+    let _ = -!a;
+}

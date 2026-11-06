@@ -421,10 +421,17 @@ impl Mul<BoolVar> for i64 {
 }
 
 // Remaining var/constant/expression combinations, for both IntVar and BoolVar:
-// var ± LinearExpr, var - i64, i64 ± var. They go through `LinearExpr` so
+// -var, var ± LinearExpr, var - i64, i64 ± var. They go through `LinearExpr` so
 // the overflow checks (and BoolVar negation checks) are shared.
 macro_rules! var_expr_ops {
     ($var:ty) => {
+        impl Neg for $var {
+            type Output = LinearExpr;
+            fn neg(self) -> LinearExpr {
+                -LinearExpr::from(self)
+            }
+        }
+
         impl Add<LinearExpr> for $var {
             type Output = LinearExpr;
             fn add(self, rhs: LinearExpr) -> LinearExpr {
