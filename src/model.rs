@@ -5,12 +5,13 @@ use crate::proto::{
     constraint_proto, AllDifferentConstraintProto, AutomatonConstraintProto, BoolArgumentProto,
     CircuitConstraintProto, ConstraintProto, CpModelProto, CpObjectiveProto,
     CumulativeConstraintProto, ElementConstraintProto, IntegerVariableProto,
-    IntervalConstraintProto, LinearArgumentProto, LinearConstraintProto, LinearExpressionProto,
+    IntervalConstraintProto, LinearArgumentProto, LinearConstraintProto,
     NoOverlap2DConstraintProto, NoOverlapConstraintProto, PartialVariableAssignment,
     TableConstraintProto,
 };
 use crate::vars::{BoolVar, IntVar, IntervalVar};
 use prost::Message;
+use std::borrow::Borrow;
 
 /// Domain specification for integer variables.
 pub trait IntoDomain {
@@ -371,21 +372,17 @@ impl CpModel {
         self
     }
 
-    /// All variables must take different values.
-    pub fn add_all_different(&mut self, vars: &[IntVar]) -> &mut Self {
+    /// All expressions must take different values.
+    pub fn add_all_different<E: Into<LinearExpr>>(
+        &mut self,
+        exprs: impl IntoIterator<Item = E>,
+    ) -> &mut Self {
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::AllDiff(
                 AllDifferentConstraintProto {
-                    exprs: vars
-                        .iter()
-                        .map(|v| LinearExpressionProto {
-                            vars: vec![v.0],
-                            coeffs: vec![1],
-                            offset: 0,
-                        })
-                        .collect(),
+                    exprs: exprs.into_iter().map(|e| e.into().to_proto()).collect(),
                 },
             )),
         });
@@ -393,13 +390,16 @@ impl CpModel {
     }
 
     /// Intervals must not overlap in time (disjunctive constraint).
-    pub fn add_no_overlap(&mut self, intervals: &[IntervalVar]) -> &mut Self {
+    pub fn add_no_overlap<I: Borrow<IntervalVar>>(
+        &mut self,
+        intervals: impl IntoIterator<Item = I>,
+    ) -> &mut Self {
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::NoOverlap(
                 NoOverlapConstraintProto {
-                    intervals: intervals.iter().map(|iv| iv.0).collect(),
+                    intervals: interval_indices(intervals),
                 },
             )),
         });
@@ -411,11 +411,13 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if `x_intervals` and `y_intervals` have different lengths.
-    pub fn add_no_overlap_2d(
+    pub fn add_no_overlap_2d<X: Borrow<IntervalVar>, Y: Borrow<IntervalVar>>(
         &mut self,
-        x_intervals: &[IntervalVar],
-        y_intervals: &[IntervalVar],
+        x_intervals: impl IntoIterator<Item = X>,
+        y_intervals: impl IntoIterator<Item = Y>,
     ) -> &mut Self {
+        let x_intervals = interval_indices(x_intervals);
+        let y_intervals = interval_indices(y_intervals);
         assert_eq!(
             x_intervals.len(),
             y_intervals.len(),
@@ -428,8 +430,8 @@ impl CpModel {
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::NoOverlap2d(
                 NoOverlap2DConstraintProto {
-                    x_intervals: x_intervals.iter().map(|iv| iv.0).collect(),
-                    y_intervals: y_intervals.iter().map(|iv| iv.0).collect(),
+                    x_intervals,
+                    y_intervals,
                 },
             )),
         });
@@ -441,12 +443,14 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if `intervals` and `demands` have different lengths.
-    pub fn add_cumulative(
+    pub fn add_cumulative<I: Borrow<IntervalVar>, D: Into<LinearExpr>>(
         &mut self,
-        intervals: &[IntervalVar],
-        demands: &[LinearExpr],
+        intervals: impl IntoIterator<Item = I>,
+        demands: impl IntoIterator<Item = D>,
         capacity: impl Into<LinearExpr>,
     ) -> &mut Self {
+        let intervals = interval_indices(intervals);
+        let demands: Vec<_> = demands.into_iter().map(|d| d.into().to_proto()).collect();
         assert_eq!(
             intervals.len(),
             demands.len(),
@@ -459,8 +463,8 @@ impl CpModel {
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::Cumulative(
                 CumulativeConstraintProto {
-                    intervals: intervals.iter().map(|iv| iv.0).collect(),
-                    demands: demands.iter().map(LinearExpr::to_proto).collect(),
+                    intervals,
+                    demands,
                     capacity: Some(capacity.into().to_proto()),
                 },
             )),
@@ -470,17 +474,19 @@ impl CpModel {
 
     /// Circuit constraint: find a Hamiltonian circuit.
     /// Each arc is (tail_node, head_node, literal).
-    pub fn add_circuit(&mut self, arcs: &[(i32, i32, BoolVar)]) -> &mut Self {
-        let (tails, heads, literals): (Vec<_>, Vec<_>, Vec<_>) =
-            arcs.iter().map(|&(t, h, l)| (t, h, l.index())).fold(
-                (vec![], vec![], vec![]),
-                |(mut t, mut h, mut l), (ti, hi, li)| {
-                    t.push(ti);
-                    h.push(hi);
-                    l.push(li);
-                    (t, h, l)
-                },
-            );
+    pub fn add_circuit<A: Borrow<(i32, i32, BoolVar)>>(
+        &mut self,
+        arcs: impl IntoIterator<Item = A>,
+    ) -> &mut Self {
+        let mut tails = vec![];
+        let mut heads = vec![];
+        let mut literals = vec![];
+        for arc in arcs {
+            let &(t, h, l) = arc.borrow();
+            tails.push(t);
+            heads.push(h);
+            literals.push(l.index());
+        }
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
@@ -499,13 +505,27 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if any tuple has a different length than `vars`.
-    pub fn add_table(&mut self, vars: &[IntVar], tuples: &[Vec<i64>], negated: bool) -> &mut Self {
-        for (i, tuple) in tuples.iter().enumerate() {
+    pub fn add_table<V, T, X>(
+        &mut self,
+        vars: impl IntoIterator<Item = V>,
+        tuples: impl IntoIterator<Item = T>,
+        negated: bool,
+    ) -> &mut Self
+    where
+        V: Borrow<IntVar>,
+        T: IntoIterator<Item = X>,
+        X: Borrow<i64>,
+    {
+        let vars = var_indices(vars);
+        let mut values = vec![];
+        for (i, tuple) in tuples.into_iter().enumerate() {
+            let before = values.len();
+            values.extend(tuple.into_iter().map(|x| *x.borrow()));
+            let len = values.len() - before;
             assert_eq!(
-                tuple.len(),
+                len,
                 vars.len(),
-                "add_table: tuple {i} has {} entries, expected {} (one per variable)",
-                tuple.len(),
+                "add_table: tuple {i} has {len} entries, expected {} (one per variable)",
                 vars.len()
             );
         }
@@ -513,8 +533,8 @@ impl CpModel {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::Table(TableConstraintProto {
-                vars: vars.iter().map(|v| v.0).collect(),
-                values: tuples.iter().flatten().copied().collect(),
+                vars,
+                values,
                 negated,
                 exprs: vec![],
             })),
@@ -526,33 +546,35 @@ impl CpModel {
     ///
     /// Each transition is `(tail_state, head_state, label)` matching
     /// the OR-Tools Python API convention.
-    pub fn add_automaton(
+    pub fn add_automaton<V, F, T>(
         &mut self,
-        vars: &[IntVar],
+        vars: impl IntoIterator<Item = V>,
         starting_state: i64,
-        final_states: &[i64],
-        transitions: &[(i64, i64, i64)],
-    ) -> &mut Self {
-        let (tails, heads, labels): (Vec<_>, Vec<_>, Vec<_>) = transitions
-            .iter()
-            .map(|&(tail, head, label)| (tail, head, label))
-            .fold(
-                (vec![], vec![], vec![]),
-                |(mut t, mut h, mut l), (ti, hi, li)| {
-                    t.push(ti);
-                    h.push(hi);
-                    l.push(li);
-                    (t, h, l)
-                },
-            );
+        final_states: impl IntoIterator<Item = F>,
+        transitions: impl IntoIterator<Item = T>,
+    ) -> &mut Self
+    where
+        V: Borrow<IntVar>,
+        F: Borrow<i64>,
+        T: Borrow<(i64, i64, i64)>,
+    {
+        let mut tails = vec![];
+        let mut heads = vec![];
+        let mut labels = vec![];
+        for transition in transitions {
+            let &(tail, head, label) = transition.borrow();
+            tails.push(tail);
+            heads.push(head);
+            labels.push(label);
+        }
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::Automaton(
                 AutomatonConstraintProto {
-                    vars: vars.iter().map(|v| v.0).collect(),
+                    vars: var_indices(vars),
                     starting_state,
-                    final_states: final_states.to_vec(),
+                    final_states: final_states.into_iter().map(|f| *f.borrow()).collect(),
                     transition_tail: tails,
                     transition_head: heads,
                     transition_label: labels,
@@ -568,8 +590,14 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if `array` is empty.
-    pub fn add_element(&mut self, index: IntVar, array: &[IntVar], target: IntVar) -> &mut Self {
-        assert!(!array.is_empty(), "add_element: array must not be empty");
+    pub fn add_element<V: Borrow<IntVar>>(
+        &mut self,
+        index: IntVar,
+        array: impl IntoIterator<Item = V>,
+        target: IntVar,
+    ) -> &mut Self {
+        let vars = var_indices(array);
+        assert!(!vars.is_empty(), "add_element: array must not be empty");
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
@@ -577,7 +605,7 @@ impl CpModel {
                 ElementConstraintProto {
                     index: index.0,
                     target: target.0,
-                    vars: array.iter().map(|v| v.0).collect(),
+                    vars,
                     linear_index: None,
                     linear_target: None,
                     exprs: vec![],
@@ -592,7 +620,11 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if `literals` is empty (would create an always-false constraint).
-    pub fn add_bool_or(&mut self, literals: &[BoolVar]) -> &mut Self {
+    pub fn add_bool_or<L: Borrow<BoolVar>>(
+        &mut self,
+        literals: impl IntoIterator<Item = L>,
+    ) -> &mut Self {
+        let literals = literal_indices(literals);
         assert!(
             !literals.is_empty(),
             "add_bool_or: literals must not be empty"
@@ -601,19 +633,22 @@ impl CpModel {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::BoolOr(BoolArgumentProto {
-                literals: literals.iter().map(|l| l.index()).collect(),
+                literals,
             })),
         });
         self
     }
 
     /// All literals must be true.
-    pub fn add_bool_and(&mut self, literals: &[BoolVar]) -> &mut Self {
+    pub fn add_bool_and<L: Borrow<BoolVar>>(
+        &mut self,
+        literals: impl IntoIterator<Item = L>,
+    ) -> &mut Self {
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::BoolAnd(BoolArgumentProto {
-                literals: literals.iter().map(|l| l.index()).collect(),
+                literals: literal_indices(literals),
             })),
         });
         self
@@ -624,7 +659,11 @@ impl CpModel {
     /// # Panics
     ///
     /// Panics if `literals` is empty (would create an always-false constraint).
-    pub fn add_exactly_one(&mut self, literals: &[BoolVar]) -> &mut Self {
+    pub fn add_exactly_one<L: Borrow<BoolVar>>(
+        &mut self,
+        literals: impl IntoIterator<Item = L>,
+    ) -> &mut Self {
+        let literals = literal_indices(literals);
         assert!(
             !literals.is_empty(),
             "add_exactly_one: literals must not be empty"
@@ -633,21 +672,22 @@ impl CpModel {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::ExactlyOne(
-                BoolArgumentProto {
-                    literals: literals.iter().map(|l| l.index()).collect(),
-                },
+                BoolArgumentProto { literals },
             )),
         });
         self
     }
 
     /// At most one literal can be true.
-    pub fn add_at_most_one(&mut self, literals: &[BoolVar]) -> &mut Self {
+    pub fn add_at_most_one<L: Borrow<BoolVar>>(
+        &mut self,
+        literals: impl IntoIterator<Item = L>,
+    ) -> &mut Self {
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::AtMostOne(BoolArgumentProto {
-                literals: literals.iter().map(|l| l.index()).collect(),
+                literals: literal_indices(literals),
             })),
         });
         self
@@ -839,4 +879,16 @@ impl std::fmt::Display for CpModel {
             },
         )
     }
+}
+
+fn var_indices<V: Borrow<IntVar>>(vars: impl IntoIterator<Item = V>) -> Vec<i32> {
+    vars.into_iter().map(|v| v.borrow().0).collect()
+}
+
+fn literal_indices<L: Borrow<BoolVar>>(literals: impl IntoIterator<Item = L>) -> Vec<i32> {
+    literals.into_iter().map(|l| l.borrow().index()).collect()
+}
+
+fn interval_indices<I: Borrow<IntervalVar>>(intervals: impl IntoIterator<Item = I>) -> Vec<i32> {
+    intervals.into_iter().map(|iv| iv.borrow().0).collect()
 }
