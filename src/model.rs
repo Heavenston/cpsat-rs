@@ -666,53 +666,49 @@ impl CpModel {
         self
     }
 
-    /// Max constraint: target == max(vars).
-    pub fn add_max_equality(&mut self, target: IntVar, vars: &[IntVar]) -> &mut Self {
-        self.proto.constraints.push(ConstraintProto {
-            name: String::new(),
-            enforcement_literal: vec![],
-            constraint: Some(constraint_proto::Constraint::LinMax(LinearArgumentProto {
-                target: Some(LinearExpressionProto {
-                    vars: vec![target.0],
-                    coeffs: vec![1],
-                    offset: 0,
-                }),
-                exprs: vars
-                    .iter()
-                    .map(|v| LinearExpressionProto {
-                        vars: vec![v.0],
-                        coeffs: vec![1],
-                        offset: 0,
-                    })
-                    .collect(),
-            })),
-        });
+    /// Max constraint: `target == max(exprs)`.
+    ///
+    /// Accepts anything convertible to [`LinearExpr`] for both the target and
+    /// the arguments, e.g. `&[IntVar]`, `Vec<LinearExpr>`, or `[x + 1, 2 * y]`.
+    pub fn add_max_equality<E: Into<LinearExpr>>(
+        &mut self,
+        target: impl Into<LinearExpr>,
+        exprs: impl IntoIterator<Item = E>,
+    ) -> &mut Self {
+        let target = target.into();
+        let exprs: Vec<LinearExpr> = exprs.into_iter().map(Into::into).collect();
+        self.push_lin_max(&target, &exprs);
         self
     }
 
-    /// Min constraint: target == min(vars).
-    pub fn add_min_equality(&mut self, target: IntVar, vars: &[IntVar]) -> &mut Self {
-        // min(vars) = -max(-vars)
+    /// Min constraint: `target == min(exprs)`.
+    ///
+    /// Encoded as `-target == max(-exprs)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any coefficient or constant in `target` or `exprs` is
+    /// `i64::MIN` (cannot be negated).
+    pub fn add_min_equality<E: Into<LinearExpr>>(
+        &mut self,
+        target: impl Into<LinearExpr>,
+        exprs: impl IntoIterator<Item = E>,
+    ) -> &mut Self {
+        let target = -target.into();
+        let exprs: Vec<LinearExpr> = exprs.into_iter().map(|e| -e.into()).collect();
+        self.push_lin_max(&target, &exprs);
+        self
+    }
+
+    fn push_lin_max(&mut self, target: &LinearExpr, exprs: &[LinearExpr]) {
         self.proto.constraints.push(ConstraintProto {
             name: String::new(),
             enforcement_literal: vec![],
             constraint: Some(constraint_proto::Constraint::LinMax(LinearArgumentProto {
-                target: Some(LinearExpressionProto {
-                    vars: vec![target.0],
-                    coeffs: vec![-1],
-                    offset: 0,
-                }),
-                exprs: vars
-                    .iter()
-                    .map(|v| LinearExpressionProto {
-                        vars: vec![v.0],
-                        coeffs: vec![-1],
-                        offset: 0,
-                    })
-                    .collect(),
+                target: Some(target.to_proto()),
+                exprs: exprs.iter().map(LinearExpr::to_proto).collect(),
             })),
         });
-        self
     }
 
     // ───── Objective ─────

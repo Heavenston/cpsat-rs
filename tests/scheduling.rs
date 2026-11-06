@@ -17,7 +17,7 @@ fn two_tasks_one_machine() {
 
     let makespan = model.new_int_var(0..=100, "makespan");
     model.add(LinearExpr::from(e0).le(100)); // dummy to use e0 bound
-    model.add_max_equality(makespan, &[e0, e1]);
+    model.add_max_equality(makespan, [e0, e1]);
     model.minimize(makespan);
 
     let response = CpSolver::solve(&model).unwrap();

@@ -86,3 +86,53 @@ fn solver_with_params() {
     assert!(response.is_optimal());
     assert_eq!(response.value(x), 0);
 }
+
+#[test]
+fn max_equality_with_expressions() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let t = model.new_int_var(-100..=100, "t");
+    model.add(LinearExpr::from(x).eq(3));
+    model.add(LinearExpr::from(y).eq(4));
+    // t + 1 == max(2x + 1, y - 2, 5)
+    model.add_max_equality(
+        t + 1,
+        [2 * x + 1, LinearExpr::from(y) - 2, LinearExpr::constant(5)],
+    );
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert!(response.is_optimal());
+    assert_eq!(response.value(t), 6);
+}
+
+#[test]
+fn min_equality_with_expressions() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let t = model.new_int_var(-100..=100, "t");
+    model.add(LinearExpr::from(x).eq(3));
+    model.add(LinearExpr::from(y).eq(4));
+    // 2t == min(x + 10, 3y - 2, 20)
+    model.add_min_equality(2 * t, [x + 10, 3 * y - 2, LinearExpr::constant(20)]);
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert!(response.is_optimal());
+    assert_eq!(response.value(t), 5);
+}
+
+#[test]
+fn min_equality_with_var_slice() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(2..=10, "x");
+    let y = model.new_int_var(4..=10, "y");
+    let t = model.new_int_var(0..=10, "t");
+    let vars = [x, y];
+    model.add_min_equality(t, vars.iter());
+    model.maximize(t);
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert!(response.is_optimal());
+    assert_eq!(response.value(t), 10);
+}

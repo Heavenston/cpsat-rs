@@ -120,6 +120,24 @@ impl From<BoolVar> for LinearExpr {
     }
 }
 
+impl From<&IntVar> for LinearExpr {
+    fn from(v: &IntVar) -> Self {
+        Self::from(*v)
+    }
+}
+
+impl From<&BoolVar> for LinearExpr {
+    fn from(b: &BoolVar) -> Self {
+        Self::from(*b)
+    }
+}
+
+impl From<&LinearExpr> for LinearExpr {
+    fn from(e: &LinearExpr) -> Self {
+        e.clone()
+    }
+}
+
 impl From<i64> for LinearExpr {
     fn from(val: i64) -> Self {
         Self::constant(val)

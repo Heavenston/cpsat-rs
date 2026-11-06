@@ -57,7 +57,7 @@ fn no_overlap_actually_prevents_overlap() {
     model.add_no_overlap(&[iv0, iv1]);
 
     let makespan = model.new_int_var(0..=20, "makespan");
-    model.add_max_equality(makespan, &[e0, e1]);
+    model.add_max_equality(makespan, [e0, e1]);
     model.minimize(makespan);
 
     let resp = CpSolver::solve(&model).unwrap();
@@ -121,7 +121,7 @@ fn precedences_respected_in_solution() {
     model.add_no_overlap(&[iv01, iv10]); // M1: j0o1, j1o0
 
     let makespan = model.new_int_var(0..=horizon, "makespan");
-    model.add_max_equality(makespan, &[e01, e11]);
+    model.add_max_equality(makespan, [e01, e11]);
     model.minimize(makespan);
 
     let resp = CpSolver::solve(&model).unwrap();
@@ -184,7 +184,7 @@ fn without_no_overlap_tasks_can_overlap() {
 
     // NO add_no_overlap — tasks should be allowed to overlap!
     let makespan = model.new_int_var(0..=10, "makespan");
-    model.add_max_equality(makespan, &[e0, e1]);
+    model.add_max_equality(makespan, [e0, e1]);
     model.minimize(makespan);
 
     let resp = CpSolver::solve(&model).unwrap();
