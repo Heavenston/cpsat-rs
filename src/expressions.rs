@@ -3,7 +3,7 @@
 use crate::vars::{BoolVar, IntVar};
 use std::borrow::Borrow;
 use std::iter::Sum;
-use std::ops::{Add, AddAssign, Mul, Neg, Sub};
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A linear expression: sum(coeff_i * var_i) + constant.
 #[derive(Debug, Clone, Default)]
@@ -208,9 +208,9 @@ impl Add<i64> for LinearExpr {
     }
 }
 
-impl Sub for LinearExpr {
-    type Output = LinearExpr;
-    fn sub(mut self, rhs: LinearExpr) -> LinearExpr {
+impl<T: Into<LinearExpr>> SubAssign<T> for LinearExpr {
+    fn sub_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
         for (v, c) in rhs.terms {
             self.terms.push((
                 v,
@@ -222,6 +222,13 @@ impl Sub for LinearExpr {
             .constant
             .checked_sub(rhs.constant)
             .expect("LinearExpr constant overflow on subtraction");
+    }
+}
+
+impl Sub for LinearExpr {
+    type Output = LinearExpr;
+    fn sub(mut self, rhs: LinearExpr) -> LinearExpr {
+        self -= rhs;
         self
     }
 }
@@ -269,9 +276,8 @@ impl Neg for LinearExpr {
     }
 }
 
-impl Mul<i64> for LinearExpr {
-    type Output = LinearExpr;
-    fn mul(mut self, rhs: i64) -> LinearExpr {
+impl MulAssign<i64> for LinearExpr {
+    fn mul_assign(&mut self, rhs: i64) {
         for term in &mut self.terms {
             term.1 = term
                 .1
@@ -282,7 +288,36 @@ impl Mul<i64> for LinearExpr {
             .constant
             .checked_mul(rhs)
             .expect("LinearExpr constant overflow on multiplication");
+    }
+}
+
+impl Mul<i64> for LinearExpr {
+    type Output = LinearExpr;
+    fn mul(mut self, rhs: i64) -> LinearExpr {
+        self *= rhs;
         self
+    }
+}
+
+// i64 op LinearExpr → LinearExpr
+impl Add<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn add(self, rhs: LinearExpr) -> LinearExpr {
+        rhs + self
+    }
+}
+
+impl Sub<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn sub(self, rhs: LinearExpr) -> LinearExpr {
+        LinearExpr::constant(self) - rhs
+    }
+}
+
+impl Mul<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn mul(self, rhs: LinearExpr) -> LinearExpr {
+        rhs * self
     }
 }
 

@@ -170,3 +170,40 @@ fn var_minus_constant_overflow_panics() {
     let x = model.new_int_var(0..=1, "x");
     let _ = x - i64::MIN;
 }
+
+#[test]
+fn constant_lhs_expr_ops_and_compound_assignment() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let a = model.new_bool_var("a");
+    model.add(LinearExpr::from(x).eq(4));
+    model.add(LinearExpr::from(y).eq(6));
+    model.add(LinearExpr::from(a).eq(1));
+
+    let response = CpSolver::solve(&model).unwrap();
+    let e = || x + y + 1; // 11
+
+    assert_eq!(response.eval(5 + e()), 16);
+    assert_eq!(response.eval(5 - e()), -6);
+    assert_eq!(response.eval(3 * e()), 33);
+
+    let mut expr = e();
+    expr -= y; // x + 1
+    expr -= &x; // 1
+    expr -= a; // 1 - a
+    expr -= 2 * y; // 1 - a - 2y
+    expr -= 4; // -3 - a - 2y
+    assert_eq!(response.eval(&expr), -16);
+    expr *= -2;
+    assert_eq!(response.eval(expr), 32);
+}
+
+#[test]
+#[should_panic(expected = "LinearExpr coefficient overflow on multiplication")]
+fn mul_assign_overflow_panics() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=1, "x");
+    let mut expr = x * i64::MAX;
+    expr *= 2;
+}
