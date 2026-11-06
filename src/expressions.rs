@@ -234,6 +234,13 @@ impl Sub<IntVar> for LinearExpr {
     }
 }
 
+impl Sub<BoolVar> for LinearExpr {
+    type Output = LinearExpr;
+    fn sub(self, rhs: BoolVar) -> LinearExpr {
+        self - rhs.as_int_var()
+    }
+}
+
 impl Sub<i64> for LinearExpr {
     type Output = LinearExpr;
     fn sub(mut self, rhs: i64) -> LinearExpr {
@@ -331,6 +338,50 @@ impl Mul<i64> for IntVar {
             terms: vec![(self, rhs)],
             constant: 0,
         }
+    }
+}
+
+// BoolVar operators delegate to the IntVar ones. Like `From<BoolVar>`, they
+// panic on negated literals.
+macro_rules! bool_var_binop {
+    ($trait:ident, $method:ident, $lhs:ty, $rhs:ty) => {
+        impl $trait<$rhs> for $lhs {
+            type Output = LinearExpr;
+            fn $method(self, rhs: $rhs) -> LinearExpr {
+                $trait::$method(IntVar::from(self), IntVar::from(rhs))
+            }
+        }
+    };
+}
+
+bool_var_binop!(Add, add, BoolVar, BoolVar);
+bool_var_binop!(Add, add, BoolVar, IntVar);
+bool_var_binop!(Add, add, IntVar, BoolVar);
+bool_var_binop!(Sub, sub, BoolVar, BoolVar);
+bool_var_binop!(Sub, sub, BoolVar, IntVar);
+bool_var_binop!(Sub, sub, IntVar, BoolVar);
+
+// BoolVar + i64 → LinearExpr
+impl Add<i64> for BoolVar {
+    type Output = LinearExpr;
+    fn add(self, rhs: i64) -> LinearExpr {
+        self.as_int_var() + rhs
+    }
+}
+
+// BoolVar * i64 → LinearExpr
+impl Mul<i64> for BoolVar {
+    type Output = LinearExpr;
+    fn mul(self, rhs: i64) -> LinearExpr {
+        self.as_int_var() * rhs
+    }
+}
+
+// coeff * BoolVar → LinearExpr
+impl Mul<BoolVar> for i64 {
+    type Output = LinearExpr;
+    fn mul(self, rhs: BoolVar) -> LinearExpr {
+        self * rhs.as_int_var()
     }
 }
 

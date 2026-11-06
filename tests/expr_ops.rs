@@ -101,3 +101,36 @@ fn add_negated_bool_var_panics() {
     let b = model.new_bool_var("b");
     let _ = LinearExpr::from(x) + !b;
 }
+
+#[test]
+fn bool_var_operators() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let a = model.new_bool_var("a");
+    let b = model.new_bool_var("b");
+    model.add(LinearExpr::from(x).eq(4));
+    model.add(LinearExpr::from(a).eq(1));
+    model.add(LinearExpr::from(b).eq(0));
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert_eq!(response.eval(a + b), 1);
+    assert_eq!(response.eval(a - b), 1);
+    assert_eq!(response.eval(b - a), -1);
+    assert_eq!(response.eval(a + x), 5);
+    assert_eq!(response.eval(x + a), 5);
+    assert_eq!(response.eval(a - x), -3);
+    assert_eq!(response.eval(x - a), 3);
+    assert_eq!(response.eval(a + 7), 8);
+    assert_eq!(response.eval(a * 3), 3);
+    assert_eq!(response.eval(3 * a), 3);
+    assert_eq!(response.eval(LinearExpr::from(x) - a), 3);
+}
+
+#[test]
+#[should_panic(expected = "Cannot convert negated BoolVar")]
+fn bool_var_operator_on_negated_panics() {
+    let mut model = CpModel::new();
+    let a = model.new_bool_var("a");
+    let b = model.new_bool_var("b");
+    let _ = a + !b;
+}
