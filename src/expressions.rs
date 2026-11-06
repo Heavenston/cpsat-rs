@@ -2,7 +2,8 @@
 
 use crate::vars::{BoolVar, IntVar};
 use std::borrow::Borrow;
-use std::ops::{Add, Mul, Neg, Sub};
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Mul, Neg, Sub};
 
 /// A linear expression: sum(coeff_i * var_i) + constant.
 #[derive(Debug, Clone, Default)]
@@ -24,9 +25,7 @@ impl LinearExpr {
     /// Create the sum of the given expressions (variables, literals,
     /// constants or other expressions).
     pub fn sum<E: Into<LinearExpr>>(exprs: impl IntoIterator<Item = E>) -> Self {
-        exprs
-            .into_iter()
-            .fold(Self::default(), |acc, e| acc + e.into())
+        exprs.into_iter().sum()
     }
 
     /// Create a weighted sum of variables.
@@ -154,14 +153,30 @@ impl From<i32> for LinearExpr {
 
 // --- Arithmetic operators ---
 
-impl Add for LinearExpr {
-    type Output = LinearExpr;
-    fn add(mut self, rhs: LinearExpr) -> LinearExpr {
+impl<T: Into<LinearExpr>> AddAssign<T> for LinearExpr {
+    fn add_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
         self.terms.extend(rhs.terms);
         self.constant = self
             .constant
             .checked_add(rhs.constant)
             .expect("LinearExpr constant overflow on addition");
+    }
+}
+
+impl<T: Into<LinearExpr>> Sum<T> for LinearExpr {
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::default(), |mut acc, e| {
+            acc += e;
+            acc
+        })
+    }
+}
+
+impl Add for LinearExpr {
+    type Output = LinearExpr;
+    fn add(mut self, rhs: LinearExpr) -> LinearExpr {
+        self += rhs;
         self
     }
 }

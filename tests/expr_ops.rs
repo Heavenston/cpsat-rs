@@ -1,0 +1,64 @@
+//! `AddAssign` and `Sum` on `LinearExpr`.
+
+use cpsat_rs::prelude::*;
+
+#[test]
+fn add_assign_accepts_vars_constants_and_exprs() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let b = model.new_bool_var("b");
+
+    let mut expr = LinearExpr::default();
+    expr += x;
+    expr += &y;
+    expr += b;
+    expr += 2 * x;
+    expr += 5;
+    // 3x + y + b + 5 == 19 with y maximized at 10 → 3x + b == 4 → x = 1, b = 1.
+    model.add(expr.eq(19));
+    model.maximize(y);
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert!(response.is_optimal());
+    assert_eq!(response.value(y), 10);
+    assert_eq!(response.value(x), 1);
+    assert!(response.bool_value(b));
+}
+
+#[test]
+fn sum_over_iterators() {
+    let mut model = CpModel::new();
+    let vars: Vec<IntVar> = (0..4)
+        .map(|i| model.new_int_var(0..=3, format!("v{i}")))
+        .collect();
+
+    // Sum of owned vars, borrowed vars, and mapped expressions.
+    let total: LinearExpr = vars.iter().copied().sum();
+    let total_ref: LinearExpr = vars.iter().sum();
+    let weighted: LinearExpr = vars
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| v * (i as i64 + 1))
+        .sum();
+
+    model.add(total.eq(6));
+    model.add(total_ref.le(6));
+    model.maximize(weighted);
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert!(response.is_optimal());
+    // Best is to push weight onto the last vars: v3 = 3, v2 = 3.
+    assert_eq!(response.objective_value(), 21.0);
+}
+
+#[test]
+fn empty_sum_is_zero() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(-5..=5, "x");
+    let empty: LinearExpr = std::iter::empty::<IntVar>().sum();
+    model.add((empty + x).eq(-3));
+
+    let response = CpSolver::solve(&model).unwrap();
+    assert_eq!(response.value(x), -3);
+}
