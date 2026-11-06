@@ -62,3 +62,33 @@ fn empty_sum_is_zero() {
     let response = CpSolver::solve(&model).unwrap();
     assert_eq!(response.value(x), -3);
 }
+
+#[test]
+fn eval_expression_against_solution() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let b = model.new_bool_var("b");
+    model.add(LinearExpr::from(x).eq(3));
+    model.add(LinearExpr::from(y).eq(7));
+    model.add(LinearExpr::from(b).eq(1));
+
+    let response = CpSolver::solve(&model).unwrap();
+    let expr = 2 * x - y * 3 + LinearExpr::from(b) + 5;
+    assert_eq!(response.eval(&expr), 6 - 21 + 1 + 5);
+    assert_eq!(response.eval(expr), -9);
+    assert_eq!(response.eval(x), 3);
+    assert_eq!(response.eval(b), 1);
+    assert_eq!(response.eval(42), 42);
+    assert_eq!(response.eval([x, y].iter().sum::<LinearExpr>()), 10);
+}
+
+#[test]
+#[should_panic(expected = "Cannot read solution values")]
+fn eval_panics_on_infeasible() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=1, "x");
+    model.add(LinearExpr::from(x).eq(5));
+    let response = CpSolver::solve(&model).unwrap();
+    let _ = response.eval(x + 1);
+}
