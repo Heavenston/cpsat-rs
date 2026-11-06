@@ -1,6 +1,7 @@
 //! Solver entry point and response type.
 
 use crate::error::SolveError;
+use crate::expressions::LinearExpr;
 use crate::ffi;
 use crate::model::CpModel;
 use crate::proto::{CpSolverResponse, CpSolverStatus, SatParameters};
@@ -96,6 +97,22 @@ impl SolveResponse {
             self.proto.solution.len()
         );
         self.proto.solution[var.index() as usize]
+    }
+
+    /// Evaluate a linear expression against the solution's variable values.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the status is not `Optimal` or `Feasible`, if a variable
+    /// index is out of bounds, or if the evaluation overflows `i64`.
+    pub fn eval(&self, expr: impl Into<LinearExpr>) -> i64 {
+        let expr = expr.into();
+        expr.terms.iter().fold(expr.constant, |acc, &(var, coeff)| {
+            self.value(var)
+                .checked_mul(coeff)
+                .and_then(|t| acc.checked_add(t))
+                .expect("LinearExpr evaluation overflow")
+        })
     }
 
     /// Get the value of a Boolean variable in the solution.

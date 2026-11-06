@@ -813,6 +813,11 @@ impl CpModel {
         hint.values.push(value);
     }
 
+    /// Remove all solution hints previously added with [`add_hint`](Self::add_hint).
+    pub fn clear_hints(&mut self) {
+        self.proto.solution_hint = None;
+    }
+
     // ───── Serialization ─────
 
     /// Get a reference to the underlying proto.

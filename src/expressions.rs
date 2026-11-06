@@ -2,7 +2,8 @@
 
 use crate::vars::{BoolVar, IntVar};
 use std::borrow::Borrow;
-use std::ops::{Add, Mul, Neg, Sub};
+use std::iter::Sum;
+use std::ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign};
 
 /// A linear expression: sum(coeff_i * var_i) + constant.
 #[derive(Debug, Clone, Default)]
@@ -24,9 +25,7 @@ impl LinearExpr {
     /// Create the sum of the given expressions (variables, literals,
     /// constants or other expressions).
     pub fn sum<E: Into<LinearExpr>>(exprs: impl IntoIterator<Item = E>) -> Self {
-        exprs
-            .into_iter()
-            .fold(Self::default(), |acc, e| acc + e.into())
+        exprs.into_iter().sum()
     }
 
     /// Create a weighted sum of variables.
@@ -154,14 +153,30 @@ impl From<i32> for LinearExpr {
 
 // --- Arithmetic operators ---
 
-impl Add for LinearExpr {
-    type Output = LinearExpr;
-    fn add(mut self, rhs: LinearExpr) -> LinearExpr {
+impl<T: Into<LinearExpr>> AddAssign<T> for LinearExpr {
+    fn add_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
         self.terms.extend(rhs.terms);
         self.constant = self
             .constant
             .checked_add(rhs.constant)
             .expect("LinearExpr constant overflow on addition");
+    }
+}
+
+impl<T: Into<LinearExpr>> Sum<T> for LinearExpr {
+    fn sum<I: Iterator<Item = T>>(iter: I) -> Self {
+        iter.fold(Self::default(), |mut acc, e| {
+            acc += e;
+            acc
+        })
+    }
+}
+
+impl Add for LinearExpr {
+    type Output = LinearExpr;
+    fn add(mut self, rhs: LinearExpr) -> LinearExpr {
+        self += rhs;
         self
     }
 }
@@ -170,6 +185,14 @@ impl Add<IntVar> for LinearExpr {
     type Output = LinearExpr;
     fn add(mut self, rhs: IntVar) -> LinearExpr {
         self.terms.push((rhs, 1));
+        self
+    }
+}
+
+impl Add<BoolVar> for LinearExpr {
+    type Output = LinearExpr;
+    fn add(mut self, rhs: BoolVar) -> LinearExpr {
+        self.terms.push((rhs.as_int_var(), 1));
         self
     }
 }
@@ -185,9 +208,9 @@ impl Add<i64> for LinearExpr {
     }
 }
 
-impl Sub for LinearExpr {
-    type Output = LinearExpr;
-    fn sub(mut self, rhs: LinearExpr) -> LinearExpr {
+impl<T: Into<LinearExpr>> SubAssign<T> for LinearExpr {
+    fn sub_assign(&mut self, rhs: T) {
+        let rhs = rhs.into();
         for (v, c) in rhs.terms {
             self.terms.push((
                 v,
@@ -199,6 +222,13 @@ impl Sub for LinearExpr {
             .constant
             .checked_sub(rhs.constant)
             .expect("LinearExpr constant overflow on subtraction");
+    }
+}
+
+impl Sub for LinearExpr {
+    type Output = LinearExpr;
+    fn sub(mut self, rhs: LinearExpr) -> LinearExpr {
+        self -= rhs;
         self
     }
 }
@@ -208,6 +238,13 @@ impl Sub<IntVar> for LinearExpr {
     fn sub(mut self, rhs: IntVar) -> LinearExpr {
         self.terms.push((rhs, -1));
         self
+    }
+}
+
+impl Sub<BoolVar> for LinearExpr {
+    type Output = LinearExpr;
+    fn sub(self, rhs: BoolVar) -> LinearExpr {
+        self - rhs.as_int_var()
     }
 }
 
@@ -239,9 +276,8 @@ impl Neg for LinearExpr {
     }
 }
 
-impl Mul<i64> for LinearExpr {
-    type Output = LinearExpr;
-    fn mul(mut self, rhs: i64) -> LinearExpr {
+impl MulAssign<i64> for LinearExpr {
+    fn mul_assign(&mut self, rhs: i64) {
         for term in &mut self.terms {
             term.1 = term
                 .1
@@ -252,7 +288,36 @@ impl Mul<i64> for LinearExpr {
             .constant
             .checked_mul(rhs)
             .expect("LinearExpr constant overflow on multiplication");
+    }
+}
+
+impl Mul<i64> for LinearExpr {
+    type Output = LinearExpr;
+    fn mul(mut self, rhs: i64) -> LinearExpr {
+        self *= rhs;
         self
+    }
+}
+
+// i64 op LinearExpr → LinearExpr
+impl Add<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn add(self, rhs: LinearExpr) -> LinearExpr {
+        rhs + self
+    }
+}
+
+impl Sub<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn sub(self, rhs: LinearExpr) -> LinearExpr {
+        LinearExpr::constant(self) - rhs
+    }
+}
+
+impl Mul<LinearExpr> for i64 {
+    type Output = LinearExpr;
+    fn mul(self, rhs: LinearExpr) -> LinearExpr {
+        rhs * self
     }
 }
 
@@ -310,6 +375,102 @@ impl Mul<i64> for IntVar {
         }
     }
 }
+
+// BoolVar operators delegate to the IntVar ones. Like `From<BoolVar>`, they
+// panic on negated literals.
+macro_rules! bool_var_binop {
+    ($trait:ident, $method:ident, $lhs:ty, $rhs:ty) => {
+        impl $trait<$rhs> for $lhs {
+            type Output = LinearExpr;
+            fn $method(self, rhs: $rhs) -> LinearExpr {
+                $trait::$method(IntVar::from(self), IntVar::from(rhs))
+            }
+        }
+    };
+}
+
+bool_var_binop!(Add, add, BoolVar, BoolVar);
+bool_var_binop!(Add, add, BoolVar, IntVar);
+bool_var_binop!(Add, add, IntVar, BoolVar);
+bool_var_binop!(Sub, sub, BoolVar, BoolVar);
+bool_var_binop!(Sub, sub, BoolVar, IntVar);
+bool_var_binop!(Sub, sub, IntVar, BoolVar);
+
+// BoolVar + i64 → LinearExpr
+impl Add<i64> for BoolVar {
+    type Output = LinearExpr;
+    fn add(self, rhs: i64) -> LinearExpr {
+        self.as_int_var() + rhs
+    }
+}
+
+// BoolVar * i64 → LinearExpr
+impl Mul<i64> for BoolVar {
+    type Output = LinearExpr;
+    fn mul(self, rhs: i64) -> LinearExpr {
+        self.as_int_var() * rhs
+    }
+}
+
+// coeff * BoolVar → LinearExpr
+impl Mul<BoolVar> for i64 {
+    type Output = LinearExpr;
+    fn mul(self, rhs: BoolVar) -> LinearExpr {
+        self * rhs.as_int_var()
+    }
+}
+
+// Remaining var/constant/expression combinations, for both IntVar and BoolVar:
+// -var, var ± LinearExpr, var - i64, i64 ± var. They go through `LinearExpr` so
+// the overflow checks (and BoolVar negation checks) are shared.
+macro_rules! var_expr_ops {
+    ($var:ty) => {
+        impl Neg for $var {
+            type Output = LinearExpr;
+            fn neg(self) -> LinearExpr {
+                -LinearExpr::from(self)
+            }
+        }
+
+        impl Add<LinearExpr> for $var {
+            type Output = LinearExpr;
+            fn add(self, rhs: LinearExpr) -> LinearExpr {
+                LinearExpr::from(self) + rhs
+            }
+        }
+
+        impl Sub<LinearExpr> for $var {
+            type Output = LinearExpr;
+            fn sub(self, rhs: LinearExpr) -> LinearExpr {
+                LinearExpr::from(self) - rhs
+            }
+        }
+
+        impl Sub<i64> for $var {
+            type Output = LinearExpr;
+            fn sub(self, rhs: i64) -> LinearExpr {
+                LinearExpr::from(self) - rhs
+            }
+        }
+
+        impl Add<$var> for i64 {
+            type Output = LinearExpr;
+            fn add(self, rhs: $var) -> LinearExpr {
+                LinearExpr::from(rhs) + self
+            }
+        }
+
+        impl Sub<$var> for i64 {
+            type Output = LinearExpr;
+            fn sub(self, rhs: $var) -> LinearExpr {
+                LinearExpr::constant(self) - LinearExpr::from(rhs)
+            }
+        }
+    };
+}
+
+var_expr_ops!(IntVar);
+var_expr_ops!(BoolVar);
 
 /// A bounded linear expression: lb <= expr <= ub.
 /// Created by calling `.le()`, `.ge()`, `.eq()`, or `.between()` on a `LinearExpr`.
