@@ -134,3 +134,39 @@ fn bool_var_operator_on_negated_panics() {
     let b = model.new_bool_var("b");
     let _ = a + !b;
 }
+
+#[test]
+fn var_constant_and_expr_operators() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=10, "x");
+    let y = model.new_int_var(0..=10, "y");
+    let a = model.new_bool_var("a");
+    model.add(LinearExpr::from(x).eq(4));
+    model.add(LinearExpr::from(y).eq(6));
+    model.add(LinearExpr::from(a).eq(1));
+
+    let response = CpSolver::solve(&model).unwrap();
+    let e = || 2 * y + 1; // 13
+
+    // IntVar
+    assert_eq!(response.eval(x + e()), 17);
+    assert_eq!(response.eval(x - e()), -9);
+    assert_eq!(response.eval(x - 3), 1);
+    assert_eq!(response.eval(3 + x), 7);
+    assert_eq!(response.eval(3 - x), -1);
+
+    // BoolVar
+    assert_eq!(response.eval(a + e()), 14);
+    assert_eq!(response.eval(a - e()), -12);
+    assert_eq!(response.eval(a - 3), -2);
+    assert_eq!(response.eval(3 + a), 4);
+    assert_eq!(response.eval(3 - a), 2);
+}
+
+#[test]
+#[should_panic(expected = "LinearExpr constant overflow")]
+fn var_minus_constant_overflow_panics() {
+    let mut model = CpModel::new();
+    let x = model.new_int_var(0..=1, "x");
+    let _ = x - i64::MIN;
+}

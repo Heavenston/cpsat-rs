@@ -385,6 +385,51 @@ impl Mul<BoolVar> for i64 {
     }
 }
 
+// Remaining var/constant/expression combinations, for both IntVar and BoolVar:
+// var ± LinearExpr, var - i64, i64 ± var. They go through `LinearExpr` so
+// the overflow checks (and BoolVar negation checks) are shared.
+macro_rules! var_expr_ops {
+    ($var:ty) => {
+        impl Add<LinearExpr> for $var {
+            type Output = LinearExpr;
+            fn add(self, rhs: LinearExpr) -> LinearExpr {
+                LinearExpr::from(self) + rhs
+            }
+        }
+
+        impl Sub<LinearExpr> for $var {
+            type Output = LinearExpr;
+            fn sub(self, rhs: LinearExpr) -> LinearExpr {
+                LinearExpr::from(self) - rhs
+            }
+        }
+
+        impl Sub<i64> for $var {
+            type Output = LinearExpr;
+            fn sub(self, rhs: i64) -> LinearExpr {
+                LinearExpr::from(self) - rhs
+            }
+        }
+
+        impl Add<$var> for i64 {
+            type Output = LinearExpr;
+            fn add(self, rhs: $var) -> LinearExpr {
+                LinearExpr::from(rhs) + self
+            }
+        }
+
+        impl Sub<$var> for i64 {
+            type Output = LinearExpr;
+            fn sub(self, rhs: $var) -> LinearExpr {
+                LinearExpr::constant(self) - LinearExpr::from(rhs)
+            }
+        }
+    };
+}
+
+var_expr_ops!(IntVar);
+var_expr_ops!(BoolVar);
+
 /// A bounded linear expression: lb <= expr <= ub.
 /// Created by calling `.le()`, `.ge()`, `.eq()`, or `.between()` on a `LinearExpr`.
 #[must_use]
