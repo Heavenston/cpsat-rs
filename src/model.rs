@@ -169,6 +169,17 @@ impl CpModel {
         IntVar(idx)
     }
 
+    /// Iterate over every variable in the model, in creation order, as
+    /// [`IntVar`]s.
+    ///
+    /// This includes Boolean variables and constants created with
+    /// [`new_bool_var`](Self::new_bool_var) and
+    /// [`new_constant`](Self::new_constant), as well as any variables added
+    /// directly through [`raw_proto_mut`](Self::raw_proto_mut).
+    pub fn variables(&self) -> impl ExactSizeIterator<Item = IntVar> + DoubleEndedIterator {
+        (0..self.proto.variables.len() as i32).map(IntVar)
+    }
+
     /// Add an interval variable defined by start, size, and end expressions.
     ///
     /// Automatically adds the required `start + size == end` and `size >= 0`
