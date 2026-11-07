@@ -829,6 +829,26 @@ impl CpModel {
         self.proto.solution_hint = None;
     }
 
+    // ───── Assumptions ─────
+
+    /// Add literals that the solver must assume to be true.
+    ///
+    /// Assumptions behave like unit clauses, except that when the model is
+    /// infeasible the solver reports a subset of them that is sufficient for
+    /// infeasibility, available through
+    /// [`SolveResponse::sufficient_assumptions_for_infeasibility`](crate::solver::SolveResponse::sufficient_assumptions_for_infeasibility).
+    /// Negated literals are allowed. Calling this multiple times appends to the
+    /// existing assumptions.
+    pub fn add_assumptions<L: Borrow<BoolVar>>(
+        &mut self,
+        literals: impl IntoIterator<Item = L>,
+    ) -> &mut Self {
+        self.proto
+            .assumptions
+            .extend(literals.into_iter().map(|l| l.borrow().index()));
+        self
+    }
+
     // ───── Serialization ─────
 
     /// Get a reference to the underlying proto.
